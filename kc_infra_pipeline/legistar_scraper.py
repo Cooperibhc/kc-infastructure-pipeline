@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urljoin, urlparse
 
@@ -161,15 +161,12 @@ class LegistarScraper:
         return parse_html(resp.text)
 
     def _calendar_pages(self, start, end):
-        """The default calendar view plus "This Month"/"Last Month" (which together
-        always cover a window of up to ~4 weeks ending today)."""
+        """The default calendar view plus the narrowest calendar filters ("This Month",
+        "Last Month", "This Year", "Last Year") that cover ``start``..``end`` (end = today)."""
         first = self._fetch(self.calendar_url)
         yield first
         form = hidden_form_fields(first)
-        periods = ["This Month"]
-        if (start.year, start.month) != (end.year, end.month):
-            periods.append("Last Month")
-        for period in periods:
+        for period in calendar_periods(start, end):
             payload = dict(form)
             payload["__EVENTTARGET"] = YEARS_FIELD
             payload["__EVENTARGUMENT"] = ""
@@ -241,10 +238,8 @@ class LegistarScraper:
                 detail_url=urljoin(meeting.fetch_ref, legislation) if legislation else "",
             )
             if item.detail_url:
-                try:
-                    item.attachments = self._fetch_attachments(item.detail_url)
-                except LegistarScrapeError as exc:
-                    log.warning("Could not load attachments for %s: %s", item.matter_file, exc)
+                # Errors propagate so the meeting isn't marked fetched and is retried next run.
+                item.attachments = self._fetch_attachments(item.detail_url)
             items.append(item)
         return items
 
@@ -260,6 +255,20 @@ class LegistarScraper:
                 seen.add(url)
                 attachments.append(Attachment(name=clean_text(a.text()) or url, url=url))
         return attachments
+
+
+def calendar_periods(start, end):
+    """Legistar calendar filter values needed to cover ``start``..``end`` when end is today."""
+    this_month = end.replace(day=1)
+    last_month = (this_month - timedelta(days=1)).replace(day=1)
+    if start >= this_month:
+        return ["This Month"]
+    if start >= last_month:
+        return ["This Month", "Last Month"]
+    if start.year < end.year - 1:
+        log.warning("Scraper only covers this year and last year; meetings before %s-01-01 "
+                    "will be missed", end.year - 1)
+    return ["This Year", "Last Year"] if start.year < end.year else ["This Year"]
 
 
 def _parse_us_date(value):

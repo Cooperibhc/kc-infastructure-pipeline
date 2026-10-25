@@ -283,6 +283,26 @@ class ScraperTests(PipelineTestCase):
         periods = [c[2]["ctl00$ContentPlaceHolder1$lstYears"] for c in http.calls if c[0] == "POST"]
         self.assertEqual(periods, ["This Month", "Last Month"])
 
+    def test_calendar_periods(self):
+        from kc_infra_pipeline.legistar_scraper import calendar_periods
+        end = date(2026, 10, 25)
+        self.assertEqual(calendar_periods(date(2026, 10, 11), end), ["This Month"])
+        self.assertEqual(calendar_periods(date(2026, 9, 1), end), ["This Month", "Last Month"])
+        self.assertEqual(calendar_periods(date(2026, 8, 31), end), ["This Year"])
+        self.assertEqual(calendar_periods(date(2025, 12, 1), date(2026, 1, 5)), ["This Month", "Last Month"])
+        self.assertEqual(calendar_periods(date(2025, 11, 30), date(2026, 1, 5)), ["This Year", "Last Year"])
+
+    def test_attachment_page_failure_retries_meeting_next_run(self):
+        routes = scrape_routes()
+        routes[("GET", SITE + "LegislationDetail.aspx")] = FakeResponse(500, "error")
+        summary = self.run_pipeline(FakeHTTP(routes), source="scrape")
+        self.assertEqual(summary.meeting_errors, 1)
+        self.assertEqual(self.rows("SELECT COUNT(*) AS n FROM agenda_items")[0]["n"], 0)
+
+        summary = self.run_pipeline(FakeHTTP(scrape_routes()), source="scrape")
+        self.assertEqual((summary.meeting_errors, summary.new_items), (0, 2))
+        self.assertEqual(self.rows("SELECT COUNT(*) AS n FROM documents")[0]["n"], 2)
+
     def test_api_and_scrape_share_keys(self):
         """A meeting stored via the API is not duplicated when later scraped."""
         self.run_pipeline(FakeHTTP(api_routes()))

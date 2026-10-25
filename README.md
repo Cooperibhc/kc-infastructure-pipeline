@@ -57,7 +57,9 @@ If the city's Legistar API requires a token, set `LEGISTAR_TOKEN` in the environ
    requested bodies, the reader scrapes `Calendar.aspx` (the default view plus the
    "This Month"/"Last Month" filters), each meeting's `MeetingDetail.aspx` agenda grid,
    and each item's `LegislationDetail.aspx` attachment list. The log says which source
-   was used and the summary shows it as `source: api` or `source: scrape`.
+   was used and the summary shows it as `source: api` or `source: scrape`. For windows longer
+   than about a month, the scraper uses the "This Year"/"Last Year" filters instead. It does
+   not follow calendar page links, so the API is the better choice for long look-backs.
 3. **Storage / de-duplication.** Meetings are keyed by city + Legistar meeting ID, and
    items by meeting + agenda number + title. A re-run skips meetings already stored
    (unless the agenda had no items the last time it was checked) and only inserts new items.
